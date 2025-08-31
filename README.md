@@ -1,7 +1,7 @@
 # TheLook_Ecommerce-Analisis-end-to-end
 ## 📌 Introducción: Problemática  
 En el competitivo mundo del e-commerce, **retener a los clientes es más difícil que atraerlos**.  
-Durante el periodo **2024 - 2025**, la plataforma **TheLook Ecommerce** enfrentó un reto crítico:  
+Durante el periodo **2024 - 2025**, la plataforma **TheLook Ecommerce** enfrentó una serie de retos críticos:  
 
 - 📉 **Altas tasas de churn (abandono de clientes).**  
 - 🛑 **Productos sin rotación durante meses.**  
