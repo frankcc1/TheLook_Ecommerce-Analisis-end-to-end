@@ -30,5 +30,14 @@ Mediante clustering y segmentación, se determinó lo siguiente:
   📍 Ejemplo: *Jeans + Fashion en China* → alto ticket promedio y afinidad comprobada.  
 
   ➡️ **Objetivo:** evitar sobre-stock + aumentar ticket promedio.  
-  
+
+### 4️⃣ Efectividad por País, Canal y Horario  
+Se identificaron patrones clave:  
+- ⏰ **Horarios Premium** → Top 3 en clientes y ventas.  
+- 💳 **Horarios de Valor Alto** → Top 3 en ticket promedio.
+- 🔥 **Horarios Buenos** → Top 5 (En clientes y ventas totales)
+- 💳 **Horarios Regulares** → Los demás.
+- 👤 Diferencias claras por **país y canal de adquisición**.  
+
+  ➡️ **Acción:** campañas segmentadas por **horario, país y canal**.
 ![](https://github.com/frankcc1/TheLook_Ecommerce-Analisis-end-to-end/blob/main/Reporte_TheLookEcommerce.jpg)
