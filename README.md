@@ -5,5 +5,30 @@ Durante el periodo **2024 - 2025**, la plataforma **TheLook Ecommerce** enfrent�
 
 - 📉 **Altas tasas de churn (abandono de clientes).**  
 - 🛑 **Productos sin rotación durante meses.**  
-- 🎯 **Promociones poco efectivas.**  
+- 🎯 **Promociones poco efectivas.**
+
+## 🛠️ Stack Tecnológico  
+- ☁️ **BigQuery** → Extracción, modelado y análisis masivo de datos.  
+- 🔥 **Databricks (ML)** → Modelos predictivos de churn.  
+- 📊 **Looker Studio** → Reporte interactivo.
+
+## 🔎 Análisis de Negocio  
+### 1️⃣ Retención y Cohortes  
+El análisis de cohortes reveló:  
+- 🔻 **Caída consistente en la retención mensual** (>30% de churn promedio).  
+- 👤 Segmentos como hombres de **45-54 años** tenían un **LTV_60m > 9500**, siendo los más valiosos en retenerlos.
+  
+### 2️⃣ Clientes en Riesgo  
+Mediante clustering y segmentación, se determinó lo siguiente:  
+- ⚠️ +34% de clientes en estado **“En Riesgo”**.  
+- 📌 Mayor concentración en **hombres 45-54 años** (el grupo más rentable a largo plazo).
+
+### 3️⃣ Productos y Canastas Inteligentes  
+- 🛒 Identificación de **categorías sin ventas en los últimos 3 meses**.  
+- 🔗 Análisis de **índice de afinidad entre categorías** → propuesta de **combos/promos cruzadas**.  
+
+  📍 Ejemplo: *Jeans + Fashion en China* → alto ticket promedio y afinidad comprobada.  
+
+  ➡️ **Objetivo:** evitar sobre-stock + aumentar ticket promedio.  
+  
 ![](https://github.com/frankcc1/TheLook_Ecommerce-Analisis-end-to-end/blob/main/Reporte_TheLookEcommerce.jpg)
