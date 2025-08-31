@@ -1,0 +1,998 @@
+
+--Categorias más vendidas
+SELECT p.category as productos, count(*) as Cantidad
+FROM `bigquery-public-data.thelook_ecommerce.order_items` as o
+inner join `bigquery-public-data.thelook_ecommerce.products` as p 
+on p.id = o.product_id
+group by p.category
+order by 2 desc;
+
+--Principales clientes (H - M)
+SELECT o.gender as Genero, count(*) as Cantidad, round(count(*)*100/(select count(*) from `bigquery-public-data.thelook_ecommerce.orders`),2) as Porcentaje
+FROM `bigquery-public-data.thelook_ecommerce.orders` as o
+group by o.gender
+
+--Categorias - Genero
+SELECT e.traffic_source AS Canal,o.gender AS Genero,COUNT(DISTINCT o.user_id) AS Total_Clientes,ROUND( COUNT(DISTINCT o.user_id) * 100.0 / SUM(COUNT(DISTINCT o.user_id)) OVER (PARTITION BY e.traffic_source),2) AS Porcentaje_Genero
+FROM `bigquery-public-data.thelook_ecommerce.orders` AS o
+INNER JOIN `bigquery-public-data.thelook_ecommerce.events` AS e
+  ON o.user_id = e.user_id
+GROUP BY e.traffic_source, o.gender
+ORDER BY Total_Clientes DESC;
+
+--Cantidad por estado de entrega (Enviado,cancelado,completado, proceso o retornado)
+with Total_Ordenes as
+(
+  select count(*) as Total
+  from `bigquery-public-data.thelook_ecommerce.orders`
+)
+
+SELECT o.status as Estado, count(*)  as Cantidad,
+round((count(*) * 100/(t.Total)),2) as Porcentaje
+FROM `bigquery-public-data.thelook_ecommerce.orders` as o,Total_Ordenes as t
+group by o.status,t.Total
+order by 2 desc;
+
+--Cantidad de clientes por pais
+with total_clientes as 
+(
+  select count(*) as cantidad_clientes
+  from `bigquery-public-data.thelook_ecommerce.users`
+)
+select u.country as Pais , count(*),
+round((count(*)*100/t.cantidad_clientes),4) as Porcentaje
+from `bigquery-public-data.thelook_ecommerce.users` as u , total_clientes as t
+group by u.country,t.cantidad_clientes
+order by 2 desc;
+
+--Canal por el cual llegaron los clientes
+
+SELECT e.traffic_source AS Canal,COUNT(distinct o.user_id) AS Total_Clientes,
+round((count(distinct o.user_id)*100/sum(count(distinct o.user_id)) over()),2) as Porcentaje
+FROM `bigquery-public-data.thelook_ecommerce.orders` as o
+INNER JOIN `bigquery-public-data.thelook_ecommerce.events` as e ON o.user_id = e.user_id
+GROUP BY e.traffic_source
+ORDER BY Total_Clientes DESC;
+
+-- Top 10 productos más vendidos
+SELECT p.name AS Nombre_Producto, COUNT(oi.id) AS Total_Vendido
+FROM `bigquery-public-data.thelook_ecommerce.order_items` as oi
+INNER JOIN `bigquery-public-data.thelook_ecommerce.products` as p 
+ON oi.product_id = p.id
+GROUP BY p.name
+ORDER BY Total_Vendido DESC
+LIMIT 10;
+
+--Ingresos por mes en el año 
+WITH max_anio AS (
+  SELECT EXTRACT(YEAR FROM MAX(DATE(oi.created_at))) AS ultimo_anio
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` as oi
+)
+SELECT 
+    FORMAT_TIMESTAMP('%B', oi.created_at) AS Mes_Nombre,
+    SUM(o.num_of_item*p.retail_price) AS Ingreso_Total
+FROM `bigquery-public-data.thelook_ecommerce.order_items` as oi
+CROSS JOIN max_anio as ma
+INNER JOIN `bigquery-public-data.thelook_ecommerce.products` as p
+on oi.product_id = p.id
+INNER JOIN `bigquery-public-data.thelook_ecommerce.orders` as o
+on oi.order_id = o.order_id
+WHERE EXTRACT(YEAR FROM oi.created_at) = ma.ultimo_anio
+GROUP BY Mes_Nombre, EXTRACT(MONTH FROM oi.created_at)
+ORDER BY EXTRACT(MONTH FROM oi.created_at);
+
+--Clientes que compraron más de 1000 soles en el ultimo mes
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(oi.created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+)
+SELECT 
+    oi.user_id AS ID_Cliente,
+    SUM(o.num_of_item*p.retail_price) AS Total_ingresos_Comprado
+FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+CROSS JOIN ultima_fecha uf
+INNER JOIN `bigquery-public-data.thelook_ecommerce.products` as p
+on oi.product_id = p.id
+INNER JOIN `bigquery-public-data.thelook_ecommerce.orders` as o
+on oi.order_id = o.order_id
+WHERE DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 1 MONTH)
+GROUP BY oi.user_id
+HAVING SUM(o.num_of_item*p.retail_price) > 1000
+ORDER BY SUM(o.num_of_item*p.retail_price) DESC;
+
+--Productos sin ventas en los ultimos 3 meses
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(oi.created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi
+)
+SELECT 
+    p.id AS ID_Producto,
+    p.name AS Nombre_Producto
+FROM `bigquery-public-data.thelook_ecommerce.products` AS p
+CROSS JOIN ultima_fecha uf
+LEFT JOIN `bigquery-public-data.thelook_ecommerce.order_items` oi 
+    ON p.id = oi.product_id 
+    AND DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 3 MONTH)
+WHERE oi.id IS NULL;
+
+--Productos que no se han vendido dentro de las categorias con %
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(oi.created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi
+),
+productos_sin_venta AS (
+  SELECT 
+      p.category AS Categoria,
+      COUNT(p.id) AS Cantidad_Productos_Sin_Venta
+  FROM `bigquery-public-data.thelook_ecommerce.products` AS p
+  CROSS JOIN ultima_fecha uf
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.order_items` oi 
+      ON p.id = oi.product_id 
+      AND DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 3 MONTH)
+  WHERE oi.id IS NULL
+  GROUP BY p.category
+)
+SELECT
+    Categoria,
+    Cantidad_Productos_Sin_Venta,
+    ROUND(Cantidad_Productos_Sin_Venta * 100.0 / SUM(Cantidad_Productos_Sin_Venta) OVER (), 2) AS Porcentaje_Sobre_Total
+FROM productos_sin_venta
+ORDER BY Cantidad_Productos_Sin_Venta DESC;
+
+--Total de ingresos por dia de la semana
+SELECT 
+    FORMAT_TIMESTAMP('%A', oi.created_at) AS Dia_Semana_Nombre,
+    SUM(o.num_of_item * p.retail_price) AS Total_Ingresos_Ventas
+FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+INNER JOIN `bigquery-public-data.thelook_ecommerce.products` as p
+ON p.id = oi.product_id
+INNER JOIN `bigquery-public-data.thelook_ecommerce.orders` AS o
+ON oi.order_id = o.order_id
+GROUP BY Dia_Semana_Nombre, EXTRACT(DAYOFWEEK FROM oi.created_at)
+ORDER BY EXTRACT(DAYOFWEEK FROM oi.created_at);
+
+--Estados con más clientes
+SELECT 
+    e.state AS Nombre_Estado, 
+    COUNT(DISTINCT o.user_id) AS Total_Clientes
+FROM `bigquery-public-data.thelook_ecommerce.orders` AS o
+INNER JOIN `bigquery-public-data.thelook_ecommerce.events` AS e 
+ON o.user_id = e.user_id
+GROUP BY e.state
+ORDER BY Total_Clientes DESC;
+
+--Productos con mayor margen de ganancia
+SELECT 
+    p.id AS ID_Producto, 
+    p.name AS Nombre_Producto, 
+    (p.retail_price - p.cost) AS Ganancia_Por_Unidad
+FROM `bigquery-public-data.thelook_ecommerce.products` p
+ORDER BY Ganancia_Por_Unidad DESC
+LIMIT 10;
+
+-- Análisis de efectividad por pais,día, hora y canal
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(oi.created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+),
+EfectividadVentas AS (
+  SELECT 
+      u.country AS Pais,
+      FORMAT_TIMESTAMP('%A', oi.created_at) AS Dia_Semana_Nombre,
+      EXTRACT(DAYOFWEEK FROM oi.created_at) AS Dia_Semana_Num,
+      EXTRACT(HOUR FROM oi.created_at) AS Hora_Venta,
+      COALESCE(e.traffic_source, 'Desconocido') AS Canal_Venta,
+      COUNT(oi.id) AS Num_Transacciones,
+      SUM(o.num_of_item * p.retail_price) AS Ventas_Totales,
+      AVG(o.num_of_item * p.retail_price) AS Ticket_Promedio,
+      COUNT(DISTINCT oi.user_id) AS Clientes_Unicos,
+      SUM(o.num_of_item) AS Unidades_Vendidas,
+      CASE 
+        WHEN COUNT(DISTINCT oi.user_id) > 0 
+        THEN SUM(o.num_of_item * p.retail_price) / COUNT(DISTINCT oi.user_id) 
+        ELSE 0 
+      END AS Valor_Por_Cliente
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi
+  INNER JOIN `bigquery-public-data.thelook_ecommerce.users` AS u 
+  ON oi.user_id = u.id
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.events` AS e 
+      ON oi.user_id = e.user_id 
+      AND DATE(oi.created_at) = DATE(e.created_at)
+  INNER JOIN `bigquery-public-data.thelook_ecommerce.products` AS p 
+  ON oi.product_id = p.id
+  INNER JOIN `bigquery-public-data.thelook_ecommerce.orders` AS o 
+  ON oi.order_id = o.order_id
+  CROSS JOIN ultima_fecha uf
+  WHERE DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 12 MONTH)
+  GROUP BY 
+      u.country,
+      FORMAT_TIMESTAMP('%A', oi.created_at), 
+      EXTRACT(DAYOFWEEK FROM oi.created_at), 
+      EXTRACT(HOUR FROM oi.created_at), 
+      COALESCE(e.traffic_source, 'Desconocido')
+),
+PeriodoHora AS (
+  SELECT 
+      ev.*,
+      CASE 
+          WHEN ev.Hora_Venta BETWEEN 6 AND 11 THEN 'Mañana (6-11)'
+          WHEN ev.Hora_Venta BETWEEN 12 AND 17 THEN 'Tarde (12-17)'
+          WHEN ev.Hora_Venta BETWEEN 18 AND 23 THEN 'Noche (18-23)'
+          ELSE 'Madrugada (0-5)'
+      END AS Periodo_Dia
+  FROM EfectividadVentas AS ev
+),
+Ranking AS (
+  SELECT ph.*,
+  RANK() OVER(PARTITION BY ph.Canal_Venta, ph.Pais ORDER BY ph.Ventas_Totales DESC) AS Ranking_Ventas,
+  RANK() OVER(PARTITION BY ph.Canal_Venta, ph.Pais ORDER BY ph.Ticket_Promedio DESC) AS Ranking_Ticket,
+  RANK() OVER(PARTITION BY ph.Canal_Venta, ph.Pais ORDER BY ph.Valor_Por_Cliente DESC) AS Ranking_Valor_Cliente,
+  RANK() OVER(PARTITION BY ph.Canal_Venta, ph.Pais ORDER BY ph.Clientes_Unicos DESC) AS Ranking_Clientes
+  FROM PeriodoHora AS ph
+)
+SELECT 
+    r.Pais,
+    r.Canal_Venta,
+    r.Dia_Semana_Nombre,
+    r.Periodo_Dia,
+    r.Hora_Venta,
+    r.Ventas_Totales,
+    r.Num_Transacciones,
+    r.Clientes_Unicos,
+    r.Unidades_Vendidas,
+    r.Ticket_Promedio,
+    r.Valor_Por_Cliente,
+    DENSE_RANK() OVER(ORDER BY r.Ventas_Totales DESC) AS Ranking_Global_Ventas,
+    r.Ranking_Ventas,
+    r.Ranking_Ticket,
+    r.Ranking_Valor_Cliente,
+    r.Ranking_Clientes,
+    CASE 
+        WHEN r.Ranking_Ventas <= 3 AND r.Ranking_Clientes <= 3 THEN 'Horario Premium'
+        WHEN r.Ranking_Ventas <= 5 OR r.Ranking_Clientes <= 5 THEN 'Horario Bueno'
+        WHEN r.Ranking_Ticket <= 3 THEN 'Horario Valor Alto'
+        ELSE 'Horario Regular'
+    END AS Clasificacion_Horario
+FROM Ranking r
+ORDER BY r.Pais, r.Canal_Venta, r.Ventas_Totales DESC;
+
+--Análisis de LTV
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(oi.created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi
+),
+HistorialCliente AS (
+  SELECT 
+      u.id AS ID_Cliente,
+      u.gender AS Segmento,
+      CASE 
+        WHEN u.age < 18 THEN '<18'
+        WHEN u.age BETWEEN 18 AND 24 THEN '18-24'
+        WHEN u.age BETWEEN 25 AND 34 THEN '25-34'
+        WHEN u.age BETWEEN 35 AND 44 THEN '35-44'
+        WHEN u.age BETWEEN 45 AND 54 THEN '45-54'
+      ELSE '55+' 
+      END AS Grupo_Edad,
+      SUM(o.num_of_item * p.retail_price) AS Ventas_Totales,
+      COUNT(DISTINCT oi.id) AS Num_Transacciones,
+      DATE_DIFF(DATE(MAX(oi.created_at)), DATE(MIN(oi.created_at)), MONTH) AS Meses_Activo,
+      SUM((o.num_of_item * p.retail_price) - p.cost) AS Margen_Total
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi
+  INNER JOIN `bigquery-public-data.thelook_ecommerce.users` AS u 
+  ON oi.user_id = u.id
+  INNER JOIN `bigquery-public-data.thelook_ecommerce.products` AS p 
+  ON oi.product_id = p.id
+  INNER JOIN `bigquery-public-data.thelook_ecommerce.orders` AS o 
+  ON oi.order_id = o.order_id
+  CROSS JOIN ultima_fecha uf
+  WHERE DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 12 MONTH)
+  GROUP BY u.id, u.gender, Grupo_Edad
+  HAVING COUNT(DISTINCT oi.id) > 1
+),
+Clientes_Ultima_Compra AS (
+  SELECT oi.user_id AS ID_Cliente,MAX(oi.created_at) AS Ultima_Compra
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  CROSS JOIN ultima_fecha uf
+  WHERE DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 12 MONTH)
+  GROUP BY oi.user_id
+),
+Churn_Rate AS (
+  SELECT 
+      u.gender AS Segmento,
+      CASE 
+          WHEN u.age < 18 THEN '<18'
+          WHEN u.age BETWEEN 18 AND 24 THEN '18-24'
+          WHEN u.age BETWEEN 25 AND 34 THEN '25-34'
+          WHEN u.age BETWEEN 35 AND 44 THEN '35-44'
+          WHEN u.age BETWEEN 45 AND 54 THEN '45-54'
+          ELSE '55+' 
+      END AS Grupo_Edad,
+      COUNT(DISTINCT CASE 
+          WHEN DATE_DIFF(uf.max_fecha, DATE(v.Ultima_Compra), MONTH) > 6 THEN v.ID_Cliente 
+          ELSE NULL 
+      END) AS Clientes_Inactivos,
+      COUNT(DISTINCT v.ID_Cliente) AS Total_Clientes,
+      CAST(COUNT(DISTINCT CASE 
+          WHEN DATE_DIFF(uf.max_fecha, DATE(v.Ultima_Compra), MONTH) > 6 THEN v.ID_Cliente 
+          ELSE NULL 
+      END) AS FLOAT64) / NULLIF(COUNT(DISTINCT v.ID_Cliente), 0) AS Tasa_Churn
+  FROM Clientes_Ultima_Compra AS v
+  INNER JOIN `bigquery-public-data.thelook_ecommerce.users` u ON v.ID_Cliente = u.id
+  CROSS JOIN ultima_fecha uf
+  GROUP BY u.gender, Grupo_Edad
+)
+SELECT 
+    hc.Segmento,
+    hc.Grupo_Edad,
+    AVG(hc.Ventas_Totales / NULLIF(hc.Meses_Activo, 0)) AS Ingreso_Mensual_Promedio,
+    AVG(hc.Margen_Total / NULLIF(hc.Meses_Activo, 0)) AS Margen_Mensual_Promedio,
+    AVG(cr.Tasa_Churn) AS Tasa_Churn_Promedio,
+    AVG(hc.Margen_Total / NULLIF(hc.Meses_Activo, 0)) / NULLIF(AVG(cr.Tasa_Churn), 0) AS LTV_Estimado,
+    AVG(hc.Margen_Total / NULLIF(hc.Meses_Activo, 0)) * 24 AS LTV_24_Meses,
+    AVG(hc.Margen_Total / NULLIF(hc.Meses_Activo, 0)) * 60 AS LTV_60_Meses
+FROM HistorialCliente AS hc
+INNER JOIN Churn_Rate cr ON hc.Segmento = cr.Segmento AND hc.Grupo_Edad = cr.Grupo_Edad
+GROUP BY hc.Segmento, hc.Grupo_Edad
+ORDER BY LTV_Estimado DESC;
+
+--Combos o promociones cruzadas
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(oi.created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi
+),
+CompraCliente AS (
+  SELECT DISTINCT
+      oi.user_id AS ID_Cliente,
+      p.category AS Categoria
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi
+  INNER JOIN `bigquery-public-data.thelook_ecommerce.products` AS p 
+  ON oi.product_id = p.id
+  CROSS JOIN ultima_fecha uf
+),
+CruzadasBase AS (
+  SELECT 
+      cc1.Categoria AS Categoria1,
+      cc2.Categoria AS Categoria2,
+      COUNT(DISTINCT cc1.ID_Cliente) AS Clientes_Comunes
+  FROM CompraCliente AS cc1
+  INNER JOIN CompraCliente AS cc2 
+  ON cc1.ID_Cliente = cc2.ID_Cliente
+      AND cc1.Categoria < cc2.Categoria
+  GROUP BY cc1.Categoria, cc2.Categoria
+),
+TotalesCategoria AS (
+  SELECT 
+      Categoria,
+      COUNT(DISTINCT ID_Cliente) AS Total_Clientes
+  FROM CompraCliente
+  GROUP BY Categoria
+)
+SELECT 
+    cb.Categoria1,
+    cb.Categoria2,
+    cb.Clientes_Comunes,
+    tc1.Total_Clientes AS Clientes_Categoria1,
+    tc2.Total_Clientes AS Clientes_Categoria2,
+    CAST(cb.Clientes_Comunes AS FLOAT64) / NULLIF(tc1.Total_Clientes, 0) * 100 AS Porcentaje_De_Cat1_A_Cat2,
+    CAST(cb.Clientes_Comunes AS FLOAT64) / NULLIF(tc2.Total_Clientes, 0) * 100 AS Porcentaje_De_Cat2_A_Cat1,
+    CAST(cb.Clientes_Comunes AS FLOAT64) / NULLIF((tc1.Total_Clientes + tc2.Total_Clientes - cb.Clientes_Comunes), 0) * 100 AS Indice_Afinidad
+FROM CruzadasBase AS cb
+INNER JOIN TotalesCategoria tc1 ON cb.Categoria1 = tc1.Categoria
+INNER JOIN TotalesCategoria tc2 ON cb.Categoria2 = tc2.Categoria
+ORDER BY Indice_Afinidad DESC;
+
+--Contribucion de cada categoria al total de ingresos
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(oi.created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+),
+VentasTotales AS (
+  SELECT SUM(o.num_of_item * p.retail_price) AS Total_General
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  CROSS JOIN ultima_fecha uf
+  INNER JOIN `bigquery-public-data.thelook_ecommerce.products` AS p 
+  ON oi.product_id = p.id
+  INNER JOIN `bigquery-public-data.thelook_ecommerce.orders` AS o 
+  ON oi.order_id = o.order_id
+)
+SELECT 
+    p.category AS Categoria,
+    ROUND(SUM(o.num_of_item * p.retail_price),2) AS Venta_Por_Categoria,
+    ROUND((SUM(o.num_of_item * p.retail_price) / (SELECT Total_General FROM VentasTotales)) * 100,2) AS Porcentaje_Contribucion
+FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+INNER JOIN `bigquery-public-data.thelook_ecommerce.products` p ON oi.product_id = p.id
+INNER JOIN `bigquery-public-data.thelook_ecommerce.orders` AS o ON oi.order_id = o.order_id
+CROSS JOIN ultima_fecha uf
+GROUP BY p.category
+ORDER BY Porcentaje_Contribucion DESC;
+
+--Ingresos en los ultimos meses por año
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(oi.created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+)
+SELECT 
+    u.country AS Region_Natural,
+    EXTRACT(YEAR FROM oi.created_at) AS Anio,
+    EXTRACT(MONTH FROM oi.created_at) AS Mes,
+    SUM(o.num_of_item * p.retail_price) AS Total_Ventas
+FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+INNER JOIN `bigquery-public-data.thelook_ecommerce.users` u ON oi.user_id = u.id
+INNER JOIN `bigquery-public-data.thelook_ecommerce.products` p ON oi.product_id = p.id
+INNER JOIN `bigquery-public-data.thelook_ecommerce.orders` AS o ON oi.order_id = o.order_id
+CROSS JOIN ultima_fecha uf
+WHERE DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 12 MONTH)
+GROUP BY u.country, EXTRACT(YEAR FROM oi.created_at), EXTRACT(MONTH FROM oi.created_at)
+ORDER BY u.country, Anio, Mes;
+
+--Valor promedio de compra por grupo de edad y genero
+SELECT 
+    CASE 
+        WHEN u.age < 18 THEN '<18'
+        WHEN u.age BETWEEN 18 AND 24 THEN '18-24'
+        WHEN u.age BETWEEN 25 AND 34 THEN '25-34'
+        WHEN u.age BETWEEN 35 AND 44 THEN '35-44'
+        WHEN u.age BETWEEN 45 AND 54 THEN '45-54'
+        ELSE '55+' 
+    END AS Grupo_Edad,
+    u.gender AS Genero,
+    AVG(o.num_of_item * p.retail_price) AS Valor_Promedio_Compra,
+    COUNT(DISTINCT oi.id) AS Total_Compras
+FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+INNER JOIN `bigquery-public-data.thelook_ecommerce.users` u ON oi.user_id = u.id
+INNER JOIN `bigquery-public-data.thelook_ecommerce.products` as p ON oi.product_id = p.id
+INNER JOIN `bigquery-public-data.thelook_ecommerce.orders` AS o ON oi.order_id = o.order_id
+GROUP BY CASE 
+        WHEN u.age < 18 THEN '<18'
+        WHEN u.age BETWEEN 18 AND 24 THEN '18-24'
+        WHEN u.age BETWEEN 25 AND 34 THEN '25-34'
+        WHEN u.age BETWEEN 35 AND 44 THEN '35-44'
+        WHEN u.age BETWEEN 45 AND 54 THEN '45-54'
+        ELSE '55+' 
+    END, u.gender
+ORDER BY Grupo_Edad, Genero;
+
+--Analisis de Cohor
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(oi.created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+),
+PrimeraCompra AS (
+  SELECT 
+      user_id AS ID_Cliente,
+      FORMAT('%04d%02d', EXTRACT(YEAR FROM created_at), EXTRACT(MONTH FROM created_at)) AS Cohort_Grupo
+  FROM (
+    SELECT 
+        oi.user_id,
+        oi.created_at,
+        ROW_NUMBER() OVER (PARTITION BY oi.user_id ORDER BY oi.created_at) AS rn
+    FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+    CROSS JOIN ultima_fecha uf
+    WHERE DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 12 MONTH)
+  ) as t
+  WHERE t.rn = 1
+),
+Compras AS (
+  SELECT 
+      oi.user_id AS ID_Cliente,
+      FORMAT('%04d%02d', EXTRACT(YEAR FROM oi.created_at), EXTRACT(MONTH FROM oi.created_at)) AS Periodo_Compra
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  CROSS JOIN ultima_fecha uf
+  WHERE DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 12 MONTH)
+  GROUP BY oi.user_id, FORMAT('%04d%02d', EXTRACT(YEAR FROM oi.created_at), EXTRACT(MONTH FROM oi.created_at))
+),
+CohortData AS (
+  SELECT 
+      pc.Cohort_Grupo,
+      co.Periodo_Compra,
+      COUNT(DISTINCT co.ID_Cliente) AS Clientes_Activos,
+      DATE_DIFF(
+          DATE(PARSE_DATE('%Y%m', co.Periodo_Compra)),
+          DATE(PARSE_DATE('%Y%m', pc.Cohort_Grupo)),
+          MONTH
+      ) AS Periodo_Num
+  FROM PrimeraCompra pc
+  INNER JOIN Compras co ON pc.ID_Cliente = co.ID_Cliente
+  GROUP BY pc.Cohort_Grupo, co.Periodo_Compra
+),
+CohortTamanio AS (
+  SELECT 
+      Cohort_Grupo,
+      COUNT(DISTINCT ID_Cliente) AS Clientes_Nuevos
+  FROM PrimeraCompra
+  GROUP BY Cohort_Grupo
+)
+SELECT 
+    cd.Cohort_Grupo,
+    cs.Clientes_Nuevos,
+    cd.Periodo_Num,
+    cd.Clientes_Activos,
+    CAST(cd.Clientes_Activos AS FLOAT64) / NULLIF(CAST(cs.Clientes_Nuevos AS FLOAT64), 0) * 100 AS Porcentaje_Retencion
+FROM CohortData cd
+INNER JOIN CohortTamanio cs ON cd.Cohort_Grupo = cs.Cohort_Grupo
+ORDER BY cd.Cohort_Grupo, cd.Periodo_Num;
+
+
+--Grafica de variacion de retencion (12 meses)
+
+CREATE OR REPLACE TABLE `distancias-432720.proyecto_churn.Tabla_Retencion` AS
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(oi.created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+),
+PrimeraCompra AS (
+  SELECT 
+      user_id AS ID_Cliente,
+      FORMAT('%04d%02d', EXTRACT(YEAR FROM created_at), EXTRACT(MONTH FROM created_at)) AS Cohort_Grupo
+  FROM (
+    SELECT 
+        oi.user_id,
+        oi.created_at,
+        ROW_NUMBER() OVER (PARTITION BY oi.user_id ORDER BY oi.created_at) AS rn
+    FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+    CROSS JOIN ultima_fecha uf
+    WHERE DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 12 MONTH)
+  ) as t
+  WHERE t.rn = 1
+),
+Compras AS (
+  SELECT 
+      oi.user_id AS ID_Cliente,
+      FORMAT('%04d%02d', EXTRACT(YEAR FROM oi.created_at), EXTRACT(MONTH FROM oi.created_at)) AS Periodo_Compra
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  CROSS JOIN ultima_fecha uf
+  WHERE DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 12 MONTH)
+  GROUP BY oi.user_id, FORMAT('%04d%02d', EXTRACT(YEAR FROM oi.created_at), EXTRACT(MONTH FROM oi.created_at))
+),
+CohortData AS (
+  SELECT 
+      pc.Cohort_Grupo,
+      co.Periodo_Compra,
+      COUNT(DISTINCT co.ID_Cliente) AS Clientes_Activos,
+      DATE_DIFF(
+          DATE(PARSE_DATE('%Y%m', co.Periodo_Compra)),
+          DATE(PARSE_DATE('%Y%m', pc.Cohort_Grupo)),
+          MONTH
+      ) AS Periodo_Num
+  FROM PrimeraCompra pc
+  INNER JOIN Compras co ON pc.ID_Cliente = co.ID_Cliente
+  GROUP BY pc.Cohort_Grupo, co.Periodo_Compra
+),
+CohortTamanio AS (
+  SELECT 
+      Cohort_Grupo,
+      COUNT(DISTINCT ID_Cliente) AS Clientes_Nuevos
+  FROM PrimeraCompra
+  GROUP BY Cohort_Grupo
+),
+Retencion AS (
+  SELECT 
+      cd.Cohort_Grupo,
+      cd.Periodo_Num,
+      CAST(cd.Clientes_Activos AS FLOAT64) / NULLIF(CAST(cs.Clientes_Nuevos AS FLOAT64), 0) * 100 AS Porcentaje_Retencion
+  FROM CohortData cd
+  INNER JOIN CohortTamanio cs 
+      ON cd.Cohort_Grupo = cs.Cohort_Grupo
+)
+SELECT 
+    Periodo_Num,
+    ROUND(AVG(Porcentaje_Retencion), 2) AS Retencion_Promedio
+FROM Retencion
+GROUP BY Periodo_Num
+ORDER BY Periodo_Num;
+
+--Cantidad de clientes en el tiempo por trimestre
+SELECT
+  DATE_TRUNC(DATE(created_at), QUARTER) AS fecha_trimestre,
+  COUNT(DISTINCT id) AS cantidad_clientes
+FROM
+  `bigquery-public-data.thelook_ecommerce.users`
+GROUP BY
+  fecha_trimestre
+ORDER BY
+  fecha_trimestre;
+
+-- Retención acumulada por cohorte trimestral
+WITH primera_compra AS (
+  SELECT
+    user_id,
+    EXTRACT(YEAR FROM MIN(created_at)) AS anio_cohorte,
+    EXTRACT(QUARTER FROM MIN(created_at)) AS trimestre_cohorte
+  FROM `bigquery-public-data.thelook_ecommerce.order_items`
+  GROUP BY user_id
+),
+actividad AS (
+  SELECT
+    p.user_id,
+    p.anio_cohorte,
+    p.trimestre_cohorte,
+    EXTRACT(YEAR FROM o.created_at) AS anio_evento,
+    EXTRACT(QUARTER FROM o.created_at) AS trimestre_evento
+  FROM primera_compra p
+  JOIN `bigquery-public-data.thelook_ecommerce.order_items` o
+    ON p.user_id = o.user_id
+),
+periodos AS (
+  SELECT
+    anio_cohorte,
+    trimestre_cohorte,
+    ((anio_evento - anio_cohorte) * 4) + (trimestre_evento - trimestre_cohorte) AS trimestres_desde_cohorte,
+    user_id
+  FROM actividad
+),
+cohorte_total AS (
+  SELECT
+    anio_cohorte,
+    trimestre_cohorte,
+    COUNT(DISTINCT user_id) AS total_clientes
+  FROM periodos
+  WHERE trimestres_desde_cohorte = 0
+  GROUP BY anio_cohorte, trimestre_cohorte
+),
+retencion AS (
+  SELECT
+    p.anio_cohorte,
+    p.trimestre_cohorte,
+    p.trimestres_desde_cohorte,
+    COUNT(DISTINCT p.user_id) AS clientes_activos
+  FROM periodos p
+  GROUP BY p.anio_cohorte, p.trimestre_cohorte, p.trimestres_desde_cohorte
+)
+SELECT
+  CONCAT(r.anio_cohorte, '-Q', r.trimestre_cohorte) AS cohorte,
+  r.trimestres_desde_cohorte,
+  r.clientes_activos,
+  ROUND(r.clientes_activos * 100.0 / c.total_clientes, 2) AS porcentaje_retencion
+FROM retencion r
+JOIN cohorte_total c
+  ON r.anio_cohorte = c.anio_cohorte
+  AND r.trimestre_cohorte = c.trimestre_cohorte
+WHERE r.trimestres_desde_cohorte >= 0
+ORDER BY r.anio_cohorte, r.trimestre_cohorte, r.trimestres_desde_cohorte;
+
+--Analisis de Clientes
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.orders`
+),
+PerfilCompra AS (
+  SELECT
+      u.id AS user_id,
+      u.traffic_source AS Canal_Preferido,
+      CASE
+          WHEN u.age < 18 THEN '<18'
+          WHEN u.age BETWEEN 18 AND 24 THEN '18-24'
+          WHEN u.age BETWEEN 25 AND 34 THEN '25-34'
+          WHEN u.age BETWEEN 35 AND 44 THEN '35-44'
+          WHEN u.age BETWEEN 45 AND 54 THEN '45-54'
+          ELSE '55+'
+      END AS Grupo_Edad,
+      u.gender AS Genero,
+      COALESCE(AVG(p.retail_price * o.num_of_item), 0) AS Ticket_Promedio,
+      COUNT(DISTINCT o.order_id) AS Frecuencia_Compra,
+      COALESCE(SUM(p.retail_price * o.num_of_item) / NULLIF(DATE_DIFF(uf.max_fecha, MIN(DATE(o.created_at)), MONTH), 0), 0) AS Valor_Mensual,
+      COALESCE(DATE_DIFF(uf.max_fecha, MAX(DATE(o.created_at)), DAY), DATE_DIFF(uf.max_fecha, DATE(u.created_at), DAY)) AS Recencia_Dias,
+      COALESCE(COUNT(DISTINCT p.category), 0) AS Diversidad_Categorias
+  FROM `bigquery-public-data.thelook_ecommerce.users` u
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.orders` o ON u.id = o.user_id
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.order_items` oi ON o.order_id = oi.order_id
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.products` p ON oi.product_id = p.id
+  CROSS JOIN ultima_fecha uf
+  GROUP BY u.id, u.traffic_source, u.age, u.gender, u.created_at, uf.max_fecha
+),
+Dimensiones AS (
+  SELECT
+      pc.*,
+      NTILE(4) OVER(ORDER BY pc.Ticket_Promedio) AS Cuartil_Ticket,
+      NTILE(4) OVER(ORDER BY pc.Frecuencia_Compra) AS Cuartil_Frecuencia,
+      NTILE(4) OVER(ORDER BY pc.Valor_Mensual) AS Cuartil_Valor,
+      NTILE(4) OVER(ORDER BY pc.Recencia_Dias DESC) AS Cuartil_Recencia,
+      NTILE(4) OVER(ORDER BY pc.Diversidad_Categorias) AS Cuartil_Diversidad
+  FROM PerfilCompra pc
+),
+Segmentos AS (
+  SELECT
+      d.*,
+      CASE
+          WHEN d.Frecuencia_Compra = 0 THEN 'Sin Compras'
+          WHEN d.Cuartil_Valor >= 3 AND d.Cuartil_Frecuencia >= 3 AND d.Cuartil_Recencia <= 2 THEN 'Campeones'
+          WHEN d.Cuartil_Valor >= 3 AND d.Cuartil_Recencia <= 2 THEN 'Valiosos Leales'
+          WHEN d.Cuartil_Frecuencia >= 3 AND d.Cuartil_Recencia <= 2 THEN 'Frecuentes Leales'
+          WHEN d.Cuartil_Recencia <= 1 AND d.Cuartil_Ticket >= 3 THEN 'Nuevos Gran Valor'
+          WHEN d.Cuartil_Recencia >= 3 AND d.Cuartil_Valor >= 3 THEN 'Durmientes Valiosos'
+          WHEN d.Cuartil_Recencia >= 3 AND d.Cuartil_Frecuencia >= 3 THEN 'Frecuentes Perdidos'
+          WHEN d.Cuartil_Diversidad >= 3 THEN 'Compradores Diversos'
+          WHEN d.Cuartil_Ticket <= 2 AND d.Cuartil_Frecuencia >= 3 THEN 'Pequeños Frecuentes'
+          WHEN d.Cuartil_Recencia <= 2 AND d.Cuartil_Valor <= 2 THEN 'Nuevos Bajo Valor'
+          WHEN d.Cuartil_Recencia >= 3 THEN 'En Riesgo'
+          ELSE 'Regulares'
+      END AS Segmento_Avanzado
+  FROM Dimensiones d
+),
+ordenes_usuario AS (
+  SELECT
+      u.id AS user_id,
+      p.category AS Categoria,
+      u.age,
+      u.gender,
+      u.country,
+      u.traffic_source,
+      u.created_at,
+      DATE_DIFF(uf.max_fecha, DATE(u.created_at), DAY) AS antiguedad_cliente,
+      COUNT(DISTINCT o.order_id) AS total_ordenes,
+      COALESCE(ROUND(SUM(p.retail_price * o.num_of_item), 2), 0) AS total_gastado,
+      COALESCE(ROUND(SUM(p.retail_price * o.num_of_item) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2), 0) AS ticket_promedio,
+      COALESCE(DATE_DIFF(uf.max_fecha, MAX(DATE(o.created_at)), DAY), DATE_DIFF(uf.max_fecha, DATE(u.created_at), DAY)) AS dias_desde_ultima_compra,
+      COALESCE(COUNT(DISTINCT p.category), 0) AS num_categorias_compradas,
+      COALESCE(COUNT(DISTINCT CASE
+          WHEN DATE_DIFF(DATE(o.created_at), DATE(u.created_at), DAY) BETWEEN 0 AND 30 THEN o.order_id
+          END), 0) AS num_compras_0_30,
+      s.Segmento_Avanzado
+  FROM `bigquery-public-data.thelook_ecommerce.users` u
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.orders` o ON u.id = o.user_id
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.order_items` oi ON o.order_id = oi.order_id
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.products` p ON oi.product_id = p.id
+  LEFT JOIN Segmentos s ON u.id = s.user_id
+  CROSS JOIN ultima_fecha uf
+  GROUP BY u.id, u.age, u.gender, u.country, u.traffic_source, u.created_at, s.Segmento_Avanzado, uf.max_fecha, p.category
+)
+SELECT *
+FROM ordenes_usuario
+ORDER BY Segmento_Avanzado, total_gastado DESC;
+
+--
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(oi.created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+),
+PerfilCompra AS (
+  SELECT
+      u.id AS user_id,
+      u.traffic_source AS Canal_Preferido,
+      CASE
+          WHEN u.age < 18 THEN '<18'
+          WHEN u.age BETWEEN 18 AND 24 THEN '18-24'
+          WHEN u.age BETWEEN 25 AND 34 THEN '25-34'
+          WHEN u.age BETWEEN 35 AND 44 THEN '35-44'
+          WHEN u.age BETWEEN 45 AND 54 THEN '45-54'
+          ELSE '55+'
+      END AS Grupo_Edad,
+      u.gender AS Genero,
+      u.country AS Pais,
+      COALESCE(AVG(p.retail_price * o.num_of_item), 0) AS Ticket_Promedio,
+      COUNT(DISTINCT o.order_id) AS Frecuencia_Compra,
+      COALESCE(SUM(p.retail_price * o.num_of_item) / NULLIF(DATE_DIFF(uf.max_fecha, MIN(DATE(o.created_at)), MONTH), 0), 0) AS Valor_Mensual,
+      COALESCE(DATE_DIFF(uf.max_fecha, MAX(DATE(o.created_at)), DAY), DATE_DIFF(uf.max_fecha, DATE(u.created_at), DAY)) AS Recencia_Dias,
+      COALESCE(COUNT(DISTINCT p.category), 0) AS Diversidad_Categorias,
+      DATE(MIN(o.created_at)) AS fecha_primera_compra
+  FROM `bigquery-public-data.thelook_ecommerce.users` u
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.orders` o ON u.id = o.user_id
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.order_items` oi ON o.order_id = oi.order_id
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.products` p ON oi.product_id = p.id
+  CROSS JOIN ultima_fecha uf
+  GROUP BY u.id, u.traffic_source, u.age, u.gender, u.country, u.created_at, uf.max_fecha
+),
+Dimensiones AS (
+  SELECT
+      pc.*,
+      NTILE(4) OVER(ORDER BY pc.Ticket_Promedio) AS Cuartil_Ticket,
+      NTILE(4) OVER(ORDER BY pc.Frecuencia_Compra) AS Cuartil_Frecuencia,
+      NTILE(4) OVER(ORDER BY pc.Valor_Mensual) AS Cuartil_Valor,
+      NTILE(4) OVER(ORDER BY pc.Recencia_Dias DESC) AS Cuartil_Recencia,
+      NTILE(4) OVER(ORDER BY pc.Diversidad_Categorias) AS Cuartil_Diversidad
+  FROM PerfilCompra pc
+),
+Segmentos AS (
+  SELECT
+      d.*,
+      CASE
+          WHEN d.Frecuencia_Compra = 0 THEN 'Sin Compras'
+          WHEN d.Cuartil_Valor >= 3 AND d.Cuartil_Frecuencia >= 3 AND d.Cuartil_Recencia <= 2 THEN 'Campeones'
+          WHEN d.Cuartil_Valor >= 3 AND d.Cuartil_Recencia <= 2 THEN 'Valiosos Leales'
+          WHEN d.Cuartil_Frecuencia >= 3 AND d.Cuartil_Recencia <= 2 THEN 'Frecuentes Leales'
+          WHEN d.Cuartil_Recencia <= 1 AND d.Cuartil_Ticket >= 3 THEN 'Nuevos Gran Valor'
+          WHEN d.Cuartil_Recencia >= 3 AND d.Cuartil_Valor >= 3 THEN 'Durmientes Valiosos'
+          WHEN d.Cuartil_Recencia >= 3 AND d.Cuartil_Frecuencia >= 3 THEN 'Frecuentes Perdidos'
+          WHEN d.Cuartil_Diversidad >= 3 THEN 'Compradores Diversos'
+          WHEN d.Cuartil_Ticket <= 2 AND d.Cuartil_Frecuencia >= 3 THEN 'Pequeños Frecuentes'
+          WHEN d.Cuartil_Recencia <= 2 AND d.Cuartil_Valor <= 2 THEN 'Nuevos Bajo Valor'
+          WHEN d.Cuartil_Recencia >= 3 THEN 'En Riesgo'
+          ELSE 'Regulares'
+      END AS Segmento_Avanzado
+  FROM Dimensiones d
+),
+ordenes_usuario AS (
+  SELECT
+      u.id AS user_id,
+      u.age,
+      u.gender,
+      u.country,
+      u.traffic_source,
+      u.created_at,
+      DATE_DIFF(uf.max_fecha, DATE(u.created_at), DAY) AS antiguedad_cliente,
+      COUNT(DISTINCT o.order_id) AS total_ordenes,
+      COALESCE(ROUND(SUM(p.retail_price * o.num_of_item), 2), 0) AS total_gastado,
+      COALESCE(ROUND(SUM(p.retail_price * o.num_of_item) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2), 0) AS ticket_promedio,
+      COALESCE(DATE_DIFF(uf.max_fecha, MAX(DATE(o.created_at)), DAY), DATE_DIFF(uf.max_fecha, DATE(u.created_at), DAY)) AS dias_desde_ultima_compra,
+      COALESCE(COUNT(DISTINCT p.category), 0) AS num_categorias_compradas,
+      COALESCE(COUNT(DISTINCT CASE
+          WHEN DATE_DIFF(DATE(o.created_at), DATE(u.created_at), DAY) BETWEEN 0 AND 30 THEN o.order_id
+          END), 0) AS num_compras_0_30,
+      s.Segmento_Avanzado,
+      DATE(MIN(o.created_at)) as fecha_primera_compra,
+      DATE_DIFF(
+        DATE(uf.max_fecha),
+        DATE(MIN(o.created_at)),
+        MONTH
+      ) AS Periodo_Num
+  FROM `bigquery-public-data.thelook_ecommerce.users` u
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.orders` o ON u.id = o.user_id
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.order_items` oi ON o.order_id = oi.order_id
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.products` p ON oi.product_id = p.id
+  LEFT JOIN Segmentos s ON u.id = s.user_id
+  CROSS JOIN ultima_fecha uf
+  GROUP BY u.id, u.age, u.gender, u.country, u.traffic_source, u.created_at, s.Segmento_Avanzado, uf.max_fecha
+),
+PrimeraCompra AS (
+  SELECT
+      user_id AS ID_Cliente,
+      FORMAT('%04d%02d', EXTRACT(YEAR FROM created_at), EXTRACT(MONTH FROM created_at)) AS Cohort_Grupo
+  FROM (
+    SELECT
+        oi.user_id,
+        oi.created_at,
+        ROW_NUMBER() OVER (PARTITION BY oi.user_id ORDER BY oi.created_at) AS rn
+    FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+    CROSS JOIN ultima_fecha uf
+    WHERE DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 12 MONTH)
+  ) as t
+  WHERE t.rn = 1
+),
+Compras AS (
+  SELECT
+      oi.user_id AS ID_Cliente,
+      FORMAT('%04d%02d', EXTRACT(YEAR FROM oi.created_at), EXTRACT(MONTH FROM oi.created_at)) AS Periodo_Compra
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  CROSS JOIN ultima_fecha uf
+  WHERE DATE(oi.created_at) >= DATE_SUB(uf.max_fecha, INTERVAL 12 MONTH)
+  GROUP BY oi.user_id, FORMAT('%04d%02d', EXTRACT(YEAR FROM oi.created_at), EXTRACT(MONTH FROM oi.created_at))
+),
+CohortData AS (
+  SELECT
+      pc.Cohort_Grupo,
+      co.Periodo_Compra,
+      COUNT(DISTINCT co.ID_Cliente) AS Clientes_Activos,
+      DATE_DIFF(
+          DATE(PARSE_DATE('%Y%m', co.Periodo_Compra)),
+          DATE(PARSE_DATE('%Y%m', pc.Cohort_Grupo)),
+          MONTH
+      ) AS Periodo_Num
+  FROM PrimeraCompra pc
+  INNER JOIN Compras co ON pc.ID_Cliente = co.ID_Cliente
+  GROUP BY pc.Cohort_Grupo, co.Periodo_Compra
+),
+CohortTamanio AS (
+  SELECT
+      Cohort_Grupo,
+      COUNT(DISTINCT ID_Cliente) AS Clientes_Nuevos
+  FROM PrimeraCompra
+  GROUP BY Cohort_Grupo
+),
+PorcentajeRetencion AS (
+  SELECT
+      cd.Cohort_Grupo,
+      cd.Periodo_Num,
+      CAST(cd.Clientes_Activos AS FLOAT64) / NULLIF(CAST(cs.Clientes_Nuevos AS FLOAT64), 0) * 100 AS Porcentaje_Retencion
+  FROM CohortData cd
+  INNER JOIN CohortTamanio cs ON cd.Cohort_Grupo = cs.Cohort_Grupo
+),
+UserCohort AS (
+  SELECT
+      pc.ID_Cliente,
+      pc.Cohort_Grupo
+  FROM PrimeraCompra pc
+)
+SELECT
+    ou.*,
+    COALESCE(pr.Porcentaje_Retencion, 0) AS Porcentaje_Retencion_Cohorte,
+    100 - COALESCE(pr.Porcentaje_Retencion, 0) AS Porcentaje_Abandono_Cohorte
+FROM ordenes_usuario ou
+LEFT JOIN UserCohort uc ON ou.user_id = uc.ID_Cliente
+LEFT JOIN PorcentajeRetencion pr ON uc.Cohort_Grupo = pr.Cohort_Grupo AND ou.Periodo_Num = pr.Periodo_Num
+ORDER BY ou.user_id, pr.Periodo_Num;
+
+-- Modelo Predictivo E-commerce 
+WITH ultima_fecha AS (
+  SELECT MAX(DATE(created_at)) AS max_fecha
+  FROM `bigquery-public-data.thelook_ecommerce.order_items`
+),
+perfil_usuario AS (
+  SELECT
+      u.id AS user_id,
+      u.age,
+      u.gender,
+      u.country,
+      u.traffic_source,
+      DATE_DIFF(uf.max_fecha, DATE(u.created_at), DAY) AS antiguedad_cliente,
+      COUNT(DISTINCT o.order_id) AS total_ordenes,
+      COALESCE(ROUND(SUM(p.retail_price * o.num_of_item), 2), 0) AS total_gastado,
+      COALESCE(ROUND(SUM(p.retail_price * o.num_of_item) / NULLIF(COUNT(DISTINCT o.order_id),0), 2), 0) AS ticket_promedio,
+      COALESCE(DATE_DIFF(uf.max_fecha, MAX(DATE(o.created_at)), DAY), DATE_DIFF(uf.max_fecha, DATE(u.created_at), DAY)) AS dias_desde_ultima_compra,
+      COUNT(DISTINCT p.category) AS num_categorias_compradas,
+      COUNT(DISTINCT CASE WHEN DATE_DIFF(DATE(o.created_at), DATE(u.created_at), DAY) BETWEEN 0 AND 30 THEN o.order_id END) AS num_compras_0_30
+  FROM `bigquery-public-data.thelook_ecommerce.users` u
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.orders` o ON u.id = o.user_id
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.order_items` oi ON o.order_id = oi.order_id
+  LEFT JOIN `bigquery-public-data.thelook_ecommerce.products` p ON oi.product_id = p.id
+  CROSS JOIN ultima_fecha uf
+  GROUP BY u.id, u.age, u.gender, u.country, u.traffic_source, u.created_at, uf.max_fecha
+),
+variables_sinteticas AS (
+  SELECT
+      pu.*,
+      --Uso de cupones
+      CASE 
+        WHEN pu.total_gastado > 1000 THEN CAST(FLOOR(RAND()*20) = 1 AS INT64)   
+        WHEN pu.total_gastado > 300 THEN CAST(FLOOR(RAND()*6) = 1 AS INT64)     
+        ELSE CAST(FLOOR(RAND()*4) = 1 AS INT64)                                
+      END AS uso_cupon,
+      
+      --Apertura de emails
+      CASE 
+        WHEN pu.dias_desde_ultima_compra < 30 THEN ROUND(RAND()*0.4 + 0.2, 2)  
+        WHEN pu.dias_desde_ultima_compra < 90 THEN ROUND(RAND()*0.3, 2)        
+        ELSE ROUND(RAND()*0.1, 2)                                             
+      END AS apertura_email_rate,
+      
+      --Visitas web
+      LEAST(50, pu.num_compras_0_30*2 + CAST(FLOOR(RAND()*5) AS INT64)) AS visitas_web_mes,
+      
+      --Dispositivo preferido
+      CASE
+        WHEN pu.age < 30 AND RAND() < 0.7 THEN "Mobile"
+        WHEN RAND() < 0.6 THEN "Mobile"
+        WHEN RAND() < 0.9 THEN "Desktop"
+        ELSE "App"
+      END AS dispositivo_preferido,
+      
+      --Ratio de devoluciones
+      CASE
+        WHEN pu.ticket_promedio > 100 THEN ROUND(RAND()*0.05, 2)
+        WHEN pu.ticket_promedio > 50 THEN ROUND(RAND()*0.1, 2)
+        ELSE ROUND(RAND()*0.2, 2)
+      END AS ratio_devoluciones
+  FROM perfil_usuario pu
+),
+-- Etiqueta de estado cliente
+label_usuario AS (
+  SELECT
+      vs.user_id,
+      CASE 
+          WHEN vs.antiguedad_cliente <= 30 THEN 'Nuevo'
+          WHEN vs.dias_desde_ultima_compra > 90 AND vs.total_ordenes > 0 THEN 'Churned'
+          WHEN vs.total_ordenes = 0 AND vs.num_compras_0_30 = 0 AND vs.antiguedad_cliente > 30 THEN 'Churned'
+          ELSE 'Activo'
+      END AS EstadoCliente
+  FROM variables_sinteticas vs
+)
+SELECT
+    vs.user_id,
+    vs.age,
+    vs.gender,
+    vs.country,
+    vs.traffic_source,
+    vs.antiguedad_cliente,
+    vs.total_ordenes,
+    vs.total_gastado,
+    vs.ticket_promedio,
+    vs.dias_desde_ultima_compra,
+    vs.num_categorias_compradas,
+    vs.num_compras_0_30,
+    vs.uso_cupon,
+    vs.apertura_email_rate,
+    vs.visitas_web_mes,
+    vs.dispositivo_preferido,
+    vs.ratio_devoluciones,
+    lu.EstadoCliente
+FROM variables_sinteticas vs
+LEFT JOIN label_usuario lu ON vs.user_id = lu.user_id;
