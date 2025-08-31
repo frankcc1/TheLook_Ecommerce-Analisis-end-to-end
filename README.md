@@ -40,4 +40,20 @@ Se identificaron patrones clave:
 - 👤 Diferencias claras por **país y canal de adquisición**.  
 
   ➡️ **Acción:** campañas segmentadas por **horario, país y canal**.
+
+### 5️⃣ Modelo Predictivo de Churn (Databricks)  
+Se construyó un modelo ML usando:  
+📊 **Variables utilizadas en el entrenamiento:**  
+- 👤 **Demográficas** → `age`, `gender`, `country`  
+- 🌐 **Origen** → `traffic_source`  
+- 📅 **Antigüedad y actividad** → `antiguedad_cliente`, `total_ordenes`, `dias_desde_ultima_compra`, `num_compras_0_30`  
+- 💸 **Valor de compra** → `total_gastado`, `ticket_promedio`  
+- 📦 **Diversidad** → `num_categorias_compradas`  
+- 🎟️ **Comportamiento digital** → `uso_cupon`, `apertura_email_rate`, `visitas_web_mes`, `dispositivo_preferido`  
+- 🔄 **Post-venta** → `ratio_devoluciones`  
+- 🏷️ **Etiqueta (target)** → `EstadoCliente`
+  
+  👉 Clasificación: **Activo | Nuevo | Churned**  
+  ➡️ **Impacto:** este modelo permite anticipar qué clientes tienen alta probabilidad de abandono y accionar campañas preventivas antes de perderlos.  
+
 ![](https://github.com/frankcc1/TheLook_Ecommerce-Analisis-end-to-end/blob/main/Reporte_TheLookEcommerce.jpg)
